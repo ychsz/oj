@@ -2,13 +2,14 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import List, Optional
-
 from app.problem_manager import (
     get_problem_list,
     load_problem,
     add_problem,
     delete_problem
 )
+from app.language_manager import get_all_languages, register_language, get_language_config
+from app.submission_manager import create_submission, get_submission
 
 app = FastAPI(title="oj")
 
@@ -32,6 +33,20 @@ class ProblemCreate(BaseModel):
     memory_limit: Optional[int] = None
     author: Optional[str] = None
     difficulty: Optional[str] = None
+
+class SubmissionCreate(BaseModel):
+    problem_id: str
+    language: str
+    code: str
+
+class LanguageRegister(BaseModel):
+    id: str
+    name: str
+    compile_cmd: Optional[str] = None
+    run_cmd: str
+    file_suffix: str
+    default_time_limit: Optional[float] = None
+    default_memory_limit: Optional[int] = None
 
 def make_response(code: int, msg: str, data=None) -> JSONResponse:
     content = {
@@ -71,3 +86,49 @@ async def delete_problem_api(problem_id: str):
     else:
         delete_problem(problem_id)
         return make_response(200, "delete success", {"id": problem_id})
+
+@app.get("/api/languages/")
+async def list_languages():
+    langs = get_all_languages()
+    return make_response(200, "success", langs)
+
+@app.post("/api/languages/")
+async def add_language(lang: LanguageRegister):
+    success = register_language(
+        lang_id=lang.id,
+        name=lang.name,
+        compile_cmd=lang.compile_cmd,
+        run_cmd=lang.run_cmd,
+        file_suffix=lang.file_suffix,
+        default_time_limit=lang.default_time_limit,
+        default_memory_limit=lang.default_memory_limit
+    )
+    if not success:
+        return make_response(409, "language id already exists", None)
+    return make_response(200, "register success", {"id": lang.id})
+
+@app.post("/api/submissions/")
+async def submit_code(submission: SubmissionCreate):
+    if not load_problem(submission.problem_id):
+        return make_response(404, "problem not found", None)
+    if not get_language_config(submission.language):
+        return make_response(404, "language not supported", None)
+    submission_id = create_submission(
+        problem_id=submission.problem_id,
+        language=submission.language,
+        code=submission.code
+    )
+    return make_response(200, "success", {
+        "submission_id": submission_id,
+        "status": "pending"
+    })
+
+@app.get("/api/submissions/{submission_id}")
+async def get_submission_result(submission_id: str):
+    sub = get_submission(submission_id)
+    if not sub:
+        return make_response(404, "submission not found", None)
+    return make_response(200, "success", {
+        "score": sub["score"],
+        "counts": sub["total_score"]
+    })
