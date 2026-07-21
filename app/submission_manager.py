@@ -1,19 +1,20 @@
 import uuid
 import asyncio
-from typing import Dict, Optional
+from typing import Dict, Optional,List,Tuple
 from app.problem_manager import load_problem
 from app.judge import judge_single_testcase
 from app.language_manager import get_language_config
 
 _submissions: Dict[str, Dict] = {}
 
-def create_submission(problem_id: str, language: str, code: str) -> str:
+def create_submission(problem_id: str, language: str, code: str,user_id:str="anonymous") -> str:
     submission_id = uuid.uuid4().hex
     _submissions[submission_id] = {
         "id": submission_id,
         "problem_id": problem_id,
         "language": language,
         "code": code,
+        "user_id":user_id,
         "status": "pending",
         "score": 0,
         "total_score": 0,
@@ -24,6 +25,46 @@ def create_submission(problem_id: str, language: str, code: str) -> str:
 
 def get_submission(submission_id: str) -> Optional[Dict]:
     return _submissions.get(submission_id)
+
+def get_submission_list(
+        user_id: Optional[str] = None,
+        problem_id: Optional[str] = None,
+        status: Optional[str] = None,
+        page: Optional[int] = None,
+        page_size: Optional[int] = None
+) -> Tuple[int, List[Dict]]:
+    if page is not None and page_size is None:
+        raise ValueError("When the page parameter exists, the page_size parameter must also be provided.")
+    all_submissions = list(_submissions.values())
+    filtered = []
+    for sub in all_submissions:
+        if user_id is not None and sub["user_id"] != user_id:
+            continue
+        if problem_id is not None and sub["problem_id"] != problem_id:
+            continue
+        if status is not None and sub["status"] != status:
+            continue
+        filtered.append(sub)
+    total_count = len(filtered)
+    if page is None and page_size is None:
+        return total_count, filtered
+    if page is None:
+        page = 1
+    start_index = (page - 1) * page_size
+    end_index = start_index + page_size
+    paginated_submissions = filtered[start_index:end_index]
+    return total_count, paginated_submissions
+
+async def rejudge_submission(submission_id: str) -> Optional[bool]:
+    submission = _submissions.get(submission_id)
+    if not submission:
+        return None
+    submission["status"] = "pending"
+    submission["score"] = 0
+    submission["total_score"] = 0
+    submission["testcases"] = []
+    asyncio.create_task(run_judge_task(submission_id))
+    return True
 
 async def run_judge_task(submission_id: str) -> None:
     submission = _submissions.get(submission_id)
