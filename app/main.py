@@ -63,6 +63,17 @@ class LoginRequest(BaseModel):
     username: str
     password: str
 
+class RegisterRequest(BaseModel):
+    username: str
+    password: str
+
+class RoleUpdateRequest(BaseModel):
+    role: str
+
+class CreateAdminRequest(BaseModel):
+    username: str
+    password: str
+
 def make_response(code: int, msg: str, data=None) -> JSONResponse:
     content = {
         "code": code,
@@ -266,3 +277,70 @@ async def logout(request: Request):
         return make_response(err_code, err_msg, None)
     request.session.clear()
     return make_response(200, "logout success", None)
+
+@app.post("/api/users/")
+async def register(user_data: RegisterRequest):
+    success, msg, user = register_user(user_data.username, user_data.password)
+    if not success:
+        return make_response(400, msg, None)
+    return make_response(200, msg, user)
+
+@app.get("/api/users/{user_id}")
+async def get_user_info(user_id: str, request: Request):
+    current_user, err_code, err_msg = get_current_user(request)
+    if not current_user:
+        return make_response(err_code, err_msg, None)
+    if current_user["user_id"] != user_id and current_user["role"] != "admin":
+        return make_response(403, "permission denied", None)
+    target_user = get_public_user_by_id(user_id)
+    if not target_user:
+        return make_response(404, "user not found", None)
+    return make_response(200, "success", target_user)
+
+@app.put("/api/users/{user_id}/role")
+async def change_user_role(user_id: str, role_data: RoleUpdateRequest, request: Request):
+    current_user, err_code, err_msg = get_current_user(request)
+    if not current_user:
+        return make_response(err_code, err_msg, None)
+    if current_user["role"] != "admin":
+        return make_response(403, "permission denied", None)
+    success, msg = update_user_role(user_id, role_data.role)
+    if not success:
+        if msg == "user not found":
+            return make_response(404, msg, None)
+        else:
+            return make_response(400, msg, None)
+    return make_response(200, msg, {"user_id": user_id, "role": role_data.role})
+
+@app.get("/api/users/")
+async def list_users(
+        request: Request,
+        page: Optional[int] = None,
+        page_size: Optional[int] = None
+):
+    current_user, err_code, err_msg = get_current_user(request)
+    if not current_user:
+        return make_response(err_code, err_msg, None)
+    if current_user["role"] != "admin":
+        return make_response(403, "permission denied", None)
+    if page is not None and page_size is None:
+        return make_response(400, "page_size is required when page is provided", None)
+    total, users = get_user_list(page, page_size)
+    return make_response(200, "success", {
+        "total": total,
+        "users": users
+    })
+
+@app.post("/api/users/admin")
+async def create_admin(admin_data: CreateAdminRequest, request: Request):
+    current_user, err_code, err_msg = get_current_user(request)
+    if not current_user:
+        return make_response(err_code, err_msg, None)
+    if current_user["role"] != "admin":
+        return make_response(403, "permission denied", None)
+    success, msg, user = register_user(admin_data.username, admin_data.password)
+    if not success:
+        return make_response(400, msg, None)
+    update_user_role(user["user_id"], "admin")
+    user["role"] = "admin"
+    return make_response(200, "success", {"user_id": user["user_id"], "username": user["username"]})
