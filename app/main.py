@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi import Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import List, Optional
@@ -9,7 +10,7 @@ from app.problem_manager import (
     delete_problem
 )
 from app.language_manager import get_all_languages, register_language, get_language_config
-from app.submission_manager import create_submission, get_submission
+from app.submission_manager import create_submission, get_submission,get_submission_list,rejudge_submission
 
 app = FastAPI(title="oj")
 
@@ -55,6 +56,11 @@ def make_response(code: int, msg: str, data=None) -> JSONResponse:
         "data": data
     }
     return JSONResponse(status_code=code, content=content)
+
+def get_current_user(request: Request) -> tuple[str, bool]:
+    user_id = request.headers.get("X-User-ID", "guest")
+    is_admin = request.headers.get("X-Is-Admin", "0") == "1"
+    return user_id, is_admin
 
 @app.get("/api/problems/")
 async def get_problems():
