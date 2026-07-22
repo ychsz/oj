@@ -1,19 +1,29 @@
-import asyncio
 from fastapi import FastAPI
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from typing import List, Optional
+from starlette.middleware.sessions import SessionMiddleware
+from typing import List, Optional,Dict,Tuple
+from app.language_manager import get_all_languages, register_language, get_language_config
+from app.submission_manager import create_submission, get_submission,get_submission_list,rejudge_submission
 from app.problem_manager import (
     get_problem_list,
     load_problem,
     add_problem,
     delete_problem
 )
-from app.language_manager import get_all_languages, register_language, get_language_config
-from app.submission_manager import create_submission, get_submission,get_submission_list,rejudge_submission
+from app.user_manager import (
+    verify_login,
+    register_user,
+    get_user_by_id,
+    get_public_user_by_id,
+    update_user_role,
+    get_user_list,
+    increment_submit_count
+)
 
 app = FastAPI(title="oj")
+app.add_middleware(SessionMiddleware, secret_key="complex-random-string")
 
 class SampleItem(BaseModel):
     input: str
@@ -49,6 +59,10 @@ class LanguageRegister(BaseModel):
     time_limit: Optional[float] = None
     memory_limit: Optional[int] = None
 
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
 def make_response(code: int, msg: str, data=None) -> JSONResponse:
     content = {
         "code": code,
@@ -57,25 +71,41 @@ def make_response(code: int, msg: str, data=None) -> JSONResponse:
     }
     return JSONResponse(status_code=code, content=content)
 
-def get_current_user(request: Request) -> tuple[str, bool]:
-    user_id = request.headers.get("X-User-ID", "guest")
-    is_admin = request.headers.get("X-Is-Admin", "0") == "1"
-    return user_id, is_admin
+def get_current_user(request: Request) -> Tuple[Optional[Dict], Optional[int], Optional[str]]:
+    user_id = request.session.get("user_id")
+    if not user_id:
+        return None, 401, "not logged in"
+    user = get_user_by_id(user_id)
+    if not user:
+        request.session.clear()
+        return None, 401, "not logged in"
+    if user["role"] == "banned":
+        return None, 403, "user is banned"
+    return get_public_user_by_id(user_id), None, None
 
 @app.get("/api/problems/")
-async def get_problems():
+async def get_problems(request: Request):
+    current_user, err_code, err_msg = get_current_user(request)
+    if not current_user:
+        return make_response(err_code, err_msg, None)
     problems = get_problem_list()
     return make_response(200, "success", problems)
 
 @app.get("/api/problems/{problem_id}")
-async def get_problem_detail(problem_id: str):
+async def get_problem_detail(problem_id: str, request: Request):
+    current_user, err_code, err_msg = get_current_user(request)
+    if not current_user:
+        return make_response(err_code, err_msg, None)
     problem = load_problem(problem_id)
     if problem is None:
         return make_response(404, "problem not found", None)
     return make_response(200, "success", problem)
 
 @app.post("/api/problems/")
-async def create_problem(problem: ProblemCreate):
+async def create_problem(problem: ProblemCreate, request: Request):
+    current_user, err_code, err_msg = get_current_user(request)
+    if not current_user:
+        return make_response(err_code, err_msg, None)
     problem_dict = problem.model_dump()
     success, msg, problem_id = add_problem(problem_dict)
     if not success:
@@ -86,9 +116,11 @@ async def create_problem(problem: ProblemCreate):
     return make_response(200, msg, {"id": problem_id})
 
 @app.delete("/api/problems/{problem_id}")
-async def delete_problem_api(problem_id: str,request:Request):
-    _, is_admin = get_current_user(request)
-    if not is_admin:
+async def delete_problem_api(problem_id: str, request: Request):
+    current_user, err_code, err_msg = get_current_user(request)
+    if not current_user:
+        return make_response(err_code, err_msg, None)
+    if current_user["role"] != "admin":
         return make_response(403, "permission denied", None)
     if load_problem(problem_id) is None:
         return make_response(404, "problem not found", None)
@@ -97,31 +129,36 @@ async def delete_problem_api(problem_id: str,request:Request):
         return make_response(200, "delete success", {"id": problem_id})
 
 @app.get("/api/languages/")
-async def list_languages():
+async def list_languages(request: Request):
+    current_user, err_code, err_msg = get_current_user(request)
+    if not current_user:
+        return make_response(err_code, err_msg, None)
     langs = get_all_languages()
     return make_response(200, "success", langs)
 
 @app.post("/api/languages/")
-async def add_language(lang: LanguageRegister,request:Request):
-    current_user, _ = get_current_user(request)
-    if current_user == "guest":
-        return make_response(401, "not logged in", None)
+async def add_language(lang: LanguageRegister, request: Request):
+    current_user, err_code, err_msg = get_current_user(request)
+    if not current_user:
+        return make_response(err_code, err_msg, None)
     success = register_language(
-        lang_id=lang.id,
+        lang_id=lang.name,
         name=lang.name,
         compile_cmd=lang.compile_cmd,
         run_cmd=lang.run_cmd,
-        file_suffix=lang.file_suffix,
-        default_time_limit=lang.default_time_limit,
-        default_memory_limit=lang.default_memory_limit
+        file_suffix=lang.file_ext,
+        default_time_limit=lang.time_limit,
+        default_memory_limit=lang.memory_limit
     )
     if not success:
-        return make_response(409, "language id already exists", None)
-    return make_response(200, "register success", {"id": lang.id})
+        return make_response(409, "language already exists", None)
+    return make_response(200, "language registered", {"name": lang.name})
 
 @app.post("/api/submissions/")
-async def submit_code(submission: SubmissionCreate,request:Request):
-    current_user, _ = get_current_user(request)
+async def submit_code(submission: SubmissionCreate, request: Request):
+    current_user, err_code, err_msg = get_current_user(request)
+    if not current_user:
+        return make_response(err_code, err_msg, None)
     if not load_problem(submission.problem_id):
         return make_response(404, "problem not found", None)
     if not get_language_config(submission.language):
@@ -130,20 +167,23 @@ async def submit_code(submission: SubmissionCreate,request:Request):
         problem_id=submission.problem_id,
         language=submission.language,
         code=submission.code,
-        user_id=current_user
+        user_id=current_user["user_id"]
     )
+    increment_submit_count(current_user["user_id"])
     return make_response(200, "success", {
         "submission_id": submission_id,
         "status": "pending"
     })
 
 @app.get("/api/submissions/{submission_id}")
-async def get_submission_result(submission_id: str,request:Request):
-    current_user, is_admin = get_current_user(request)
+async def get_submission_result(submission_id: str, request: Request):
+    current_user, err_code, err_msg = get_current_user(request)
+    if not current_user:
+        return make_response(err_code, err_msg, None)
     sub = get_submission(submission_id)
     if not sub:
         return make_response(404, "submission not found", None)
-    if not is_admin and sub["user_id"] != current_user:
+    if current_user["role"] != "admin" and sub["user_id"] != current_user["user_id"]:
         return make_response(403, "permission denied", None)
     return make_response(200, "success", {
         "score": sub["score"],
@@ -159,10 +199,12 @@ async def list_submissions(
         page: Optional[int] = None,
         page_size: Optional[int] = None
 ):
-    current_user, is_admin = get_current_user(request)
+    current_user, err_code, err_msg = get_current_user(request)
+    if not current_user:
+        return make_response(err_code, err_msg, None)
     if user_id is None:
-        if not is_admin:
-            user_id = current_user
+        if current_user["role"] != "admin":
+            user_id = current_user["user_id"]
     if user_id is None and problem_id is None:
         return make_response(400, "user_id and problem_id cannot both be empty", None)
     if page is not None and page_size is None:
@@ -191,8 +233,10 @@ async def list_submissions(
 
 @app.put("/api/submissions/{submission_id}/rejudge")
 async def rejudge_submission_api(submission_id: str, request: Request):
-    _, is_admin = get_current_user(request)
-    if not is_admin:
+    current_user, err_code, err_msg = get_current_user(request)
+    if not current_user:
+        return make_response(err_code, err_msg, None)
+    if current_user["role"] != "admin":
         return make_response(403, "permission denied", None)
     sub = get_submission(submission_id)
     if not sub:
@@ -202,3 +246,23 @@ async def rejudge_submission_api(submission_id: str, request: Request):
         "submission_id": submission_id,
         "status": "pending"
     })
+
+@app.post("/api/auth/login")
+async def login(request: Request, login_data: LoginRequest):
+    code, msg, user = verify_login(login_data.username, login_data.password)
+    if code != 200:
+        return make_response(code, msg, None)
+    request.session["user_id"] = user["user_id"]
+    return make_response(200, msg, {
+        "user_id": user["user_id"],
+        "username": user["username"],
+        "role": user["role"]
+    })
+
+@app.post("/api/auth/logout")
+async def logout(request: Request):
+    user, err_code, err_msg = get_current_user(request)
+    if not user:
+        return make_response(err_code, err_msg, None)
+    request.session.clear()
+    return make_response(200, "logout success", None)
