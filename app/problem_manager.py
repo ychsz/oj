@@ -49,6 +49,10 @@ def validate_and_fill_problem(problem_data: Dict) -> Tuple[bool, str, Dict]:
         problem_data["memory_limit"] = 128
     else:
         problem_data["memory_limit"] = int(problem_data["memory_limit"])
+    if "public_cases" not in problem_data:
+        problem_data["public_cases"] = False
+    else:
+        problem_data["public_cases"] = bool(problem_data["public_cases"])
     return True, "valid", problem_data
 
 def add_problem(problem_data: Dict) -> Tuple[bool, str, str]:
@@ -69,3 +73,13 @@ def delete_problem(problem_id: str) -> bool:
         return False
     os.remove(file_path)
     return True
+
+def update_problem_log_visibility(problem_id: str, public_cases: bool) -> Tuple[bool, str]:
+    problem = load_problem(problem_id)
+    if not problem:
+        return False, "problem not found"
+    problem["public_cases"] = public_cases
+    file_path = get_problem_file_path(problem_id)
+    with open(file_path, "w", encoding="utf-8") as f:
+        json.dump(problem, f, ensure_ascii=False, indent=2)
+    return True, "log visibility updated"
