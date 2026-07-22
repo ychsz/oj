@@ -4,6 +4,7 @@ from typing import Dict, Optional,List,Tuple
 from app.problem_manager import load_problem
 from app.judge import judge_single_testcase
 from app.language_manager import get_language_config
+from app.user_manager import increment_resolve_count
 
 _submissions: Dict[str, Dict] = {}
 
@@ -97,6 +98,8 @@ async def run_judge_task(submission_id: str) -> None:
                 passed_count += 1
         submission["score"] = passed_count * 10
         submission["status"] = "success"
+        if submission["score"] == submission["total_score"]:
+            increment_resolve_count(submission["user_id"], submission["problem_id"])
     except Exception as e:
         submission["status"] = "error"
         submission["info"] = str(e)
