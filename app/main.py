@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import FastAPI
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -114,7 +115,8 @@ async def add_language(lang: LanguageRegister):
     return make_response(200, "register success", {"id": lang.id})
 
 @app.post("/api/submissions/")
-async def submit_code(submission: SubmissionCreate):
+async def submit_code(submission: SubmissionCreate,request:Request):
+    current_user, _ = get_current_user(request)
     if not load_problem(submission.problem_id):
         return make_response(404, "problem not found", None)
     if not get_language_config(submission.language):
@@ -122,7 +124,8 @@ async def submit_code(submission: SubmissionCreate):
     submission_id = create_submission(
         problem_id=submission.problem_id,
         language=submission.language,
-        code=submission.code
+        code=submission.code,
+        user_id=current_user
     )
     return make_response(200, "success", {
         "submission_id": submission_id,
@@ -130,11 +133,67 @@ async def submit_code(submission: SubmissionCreate):
     })
 
 @app.get("/api/submissions/{submission_id}")
-async def get_submission_result(submission_id: str):
+async def get_submission_result(submission_id: str,request:Request):
+    current_user, is_admin = get_current_user(request)
     sub = get_submission(submission_id)
     if not sub:
         return make_response(404, "submission not found", None)
+    if not is_admin and sub["user_id"] != current_user:
+        return make_response(403, "permission denied", None)
     return make_response(200, "success", {
         "score": sub["score"],
         "counts": sub["total_score"]
+    })
+
+@app.get("/api/submissions/")
+async def list_submissions(
+        request: Request,
+        user_id: Optional[str] = None,
+        problem_id: Optional[str] = None,
+        status: Optional[str] = None,
+        page: Optional[int] = None,
+        page_size: Optional[int] = None
+):
+    current_user, is_admin = get_current_user(request)
+    if user_id is None:
+        if not is_admin:
+            user_id = current_user
+    if user_id is None and problem_id is None:
+        return make_response(400, "user_id and problem_id cannot both be empty", None)
+    if page is not None and page_size is None:
+        return make_response(400, "page_size is required when page is provided", None)
+    total, subs = get_submission_list(
+        user_id=user_id,
+        problem_id=problem_id,
+        status=status,
+        page=page,
+        page_size=page_size
+    )
+    result_list = []
+    for sub in subs:
+        item = {
+            "submission_id": sub["id"],
+            "status": sub["status"]
+        }
+        if sub["status"] == "success":
+            item["score"] = sub["score"]
+            item["counts"] = sub["total_score"]
+        result_list.append(item)
+    return make_response(200, "success", {
+        "total": total,
+        "submissions": result_list
+    })
+
+@app.put("/api/submissions/{submission_id}/rejudge")
+async def rejudge_submission_api(submission_id: str, request: Request):
+    _, is_admin = get_current_user(request)
+    if not is_admin:
+        return make_response(403, "permission denied", None)
+    sub = get_submission(submission_id)
+    if not sub:
+        return make_response(404, "submission not found", None)
+    asyncio.create_task(rejudge_submission(submission_id))
+    return make_response(200, "rejudge started", {
+        "submission_id": submission_id,
+        "status": "pending"
     })
