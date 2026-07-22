@@ -33,8 +33,6 @@ def get_submission_list(
         page: Optional[int] = None,
         page_size: Optional[int] = None
 ) -> Tuple[int, List[Dict]]:
-    if page is not None and page_size is None:
-        raise ValueError("When the page parameter exists, the page_size parameter must also be provided.")
     all_submissions = list(_submissions.values())
     filtered = []
     for sub in all_submissions:

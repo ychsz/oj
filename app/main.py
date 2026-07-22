@@ -42,13 +42,12 @@ class SubmissionCreate(BaseModel):
     code: str
 
 class LanguageRegister(BaseModel):
-    id: str
     name: str
+    file_ext:str
     compile_cmd: Optional[str] = None
     run_cmd: str
-    file_suffix: str
-    default_time_limit: Optional[float] = None
-    default_memory_limit: Optional[int] = None
+    time_limit: Optional[float] = None
+    memory_limit: Optional[int] = None
 
 def make_response(code: int, msg: str, data=None) -> JSONResponse:
     content = {
@@ -87,7 +86,10 @@ async def create_problem(problem: ProblemCreate):
     return make_response(200, msg, {"id": problem_id})
 
 @app.delete("/api/problems/{problem_id}")
-async def delete_problem_api(problem_id: str):
+async def delete_problem_api(problem_id: str,request:Request):
+    _, is_admin = get_current_user(request)
+    if not is_admin:
+        return make_response(403, "permission denied", None)
     if load_problem(problem_id) is None:
         return make_response(404, "problem not found", None)
     else:
@@ -100,7 +102,10 @@ async def list_languages():
     return make_response(200, "success", langs)
 
 @app.post("/api/languages/")
-async def add_language(lang: LanguageRegister):
+async def add_language(lang: LanguageRegister,request:Request):
+    current_user, _ = get_current_user(request)
+    if current_user == "guest":
+        return make_response(401, "not logged in", None)
     success = register_language(
         lang_id=lang.id,
         name=lang.name,
@@ -192,7 +197,7 @@ async def rejudge_submission_api(submission_id: str, request: Request):
     sub = get_submission(submission_id)
     if not sub:
         return make_response(404, "submission not found", None)
-    asyncio.create_task(rejudge_submission(submission_id))
+    await rejudge_submission(submission_id)
     return make_response(200, "rejudge started", {
         "submission_id": submission_id,
         "status": "pending"
