@@ -6,11 +6,13 @@ from starlette.middleware.sessions import SessionMiddleware
 from typing import List, Optional,Dict,Tuple
 from app.language_manager import get_all_languages, register_language, get_language_config
 from app.submission_manager import create_submission, get_submission,get_submission_list,rejudge_submission
+from app.audit_manager import add_audit_log, get_audit_log_list
 from app.problem_manager import (
     get_problem_list,
     load_problem,
     add_problem,
-    delete_problem
+    delete_problem,
+    update_problem_log_visibility
 )
 from app.user_manager import (
     verify_login,
@@ -73,6 +75,9 @@ class RoleUpdateRequest(BaseModel):
 class CreateAdminRequest(BaseModel):
     username: str
     password: str
+
+class LogVisibilityUpdate(BaseModel):
+    public_cases: bool = False
 
 def make_response(code: int, msg: str, data=None) -> JSONResponse:
     content = {
@@ -344,3 +349,91 @@ async def create_admin(admin_data: CreateAdminRequest, request: Request):
     update_user_role(user["user_id"], "admin")
     user["role"] = "admin"
     return make_response(200, "success", {"user_id": user["user_id"], "username": user["username"]})
+
+@app.get("/api/submissions/{submission_id}/log")
+async def get_submission_log(submission_id: str, request: Request):
+    current_user, err_code, err_msg = get_current_user(request)
+    if not current_user:
+        return make_response(err_code, err_msg, None)
+    sub = get_submission(submission_id)
+    if not sub:
+        return make_response(404, "submission not found", None)
+    problem = load_problem(sub["problem_id"])
+    if not problem:
+        return make_response(404, "problem not found", None)
+    is_admin = current_user["role"] == "admin"
+    is_owner = sub["user_id"] == current_user["user_id"]
+    is_public = problem.get("public_cases", False)
+    has_permission = is_admin or is_owner or is_public
+    if not has_permission:
+        add_audit_log(
+            user_id=current_user["user_id"],
+            problem_id=sub["problem_id"],
+            action="view_log",
+            status=403
+        )
+        return make_response(403, "permission denied", None)
+    details = []
+    for idx, testcase in enumerate(sub["testcases"], start=1):
+        details.append({
+            "id": idx,
+            "result": testcase["status"],
+            "time": round(testcase["time"], 2),
+            "memory": round(testcase["memory"], 2)
+        })
+    add_audit_log(
+        user_id=current_user["user_id"],
+        problem_id=sub["problem_id"],
+        action="view_log",
+        status=200
+    )
+    return make_response(200, "success", {
+        "details": details,
+        "score": sub["score"],
+        "counts": sub["total_score"]
+    })
+
+@app.put("/api/problems/{problem_id}/log_visibility")
+async def update_log_visibility(
+    problem_id: str,
+    vis_data: LogVisibilityUpdate,
+    request: Request
+):
+    current_user, err_code, err_msg = get_current_user(request)
+    if not current_user:
+        return make_response(err_code, err_msg, None)
+    if current_user["role"] != "admin":
+        return make_response(403, "permission denied", None)
+    success, msg = update_problem_log_visibility(problem_id, vis_data.public_cases)
+    if not success:
+        return make_response(404, msg, None)
+    return make_response(200, msg, {
+        "problem_id": problem_id,
+        "public_cases": vis_data.public_cases
+    })
+
+@app.get("/api/logs/access/")
+async def list_audit_logs(
+    request: Request,
+    user_id: Optional[str] = None,
+    problem_id: Optional[str] = None,
+    page: Optional[int] = None,
+    page_size: Optional[int] = None
+):
+    current_user, err_code, err_msg = get_current_user(request)
+    if not current_user:
+        return make_response(err_code, err_msg, None)
+    if current_user["role"] != "admin":
+        return make_response(403, "permission denied", None)
+    if page is not None and page_size is None:
+        return make_response(400, "page_size is required when page is provided", None)
+    total, logs = get_audit_log_list(
+        user_id=user_id,
+        problem_id=problem_id,
+        page=page,
+        page_size=page_size
+    )
+    return make_response(200, "success", {
+        "total": total,
+        "logs": logs
+    })
