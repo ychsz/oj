@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.middleware.sessions import SessionMiddleware
 from typing import List, Optional,Dict,Tuple
-from app.language_manager import get_all_languages, register_language, get_language_config
+from app.language_manager import get_all_languages, register_language, get_language_config, reset_languages
 from app.submission_manager import create_submission, get_submission,get_submission_list,rejudge_submission,reset_submissions, export_submissions, import_submissions
 from app.audit_manager import add_audit_log, get_audit_log_list,reset_audit_logs
 from app.problem_manager import (
@@ -70,19 +70,19 @@ class LanguageRegister(BaseModel):
     memory_limit: Optional[int] = None
 
 class LoginRequest(BaseModel):
-    username: str
-    password: str
+    username: Optional[str] = None
+    password: Optional[str] = None
 
 class RegisterRequest(BaseModel):
-    username: str
-    password: str
+    username: Optional[str] = None
+    password: Optional[str] = None
 
 class RoleUpdateRequest(BaseModel):
     role: str
 
 class CreateAdminRequest(BaseModel):
-    username: str
-    password: str
+    username: Optional[str] = None
+    password: Optional[str] = None
 
 class LogVisibilityUpdate(BaseModel):
     public_cases: bool = False
@@ -226,9 +226,6 @@ async def list_submissions(
     current_user, err_code, err_msg = get_current_user(request)
     if not current_user:
         return make_response(err_code, err_msg, None)
-    if user_id is None:
-        if current_user["role"] != "admin":
-            user_id = current_user["user_id"]
     if user_id is None and problem_id is None:
         return make_response(400, "user_id and problem_id cannot both be empty", None)
     if page is not None and page_size is None:
@@ -273,6 +270,8 @@ async def rejudge_submission_api(submission_id: str, request: Request):
 
 @app.post("/api/auth/login")
 async def login(request: Request, login_data: LoginRequest):
+    if not login_data.username or not login_data.password:
+        return make_response(400, "username and password are required", None)
     code, msg, user = verify_login(login_data.username, login_data.password)
     if code != 200:
         return make_response(code, msg, None)
@@ -293,6 +292,8 @@ async def logout(request: Request):
 
 @app.post("/api/users/")
 async def register(user_data: RegisterRequest):
+    if not user_data.username or not user_data.password:
+        return make_response(400, "username and password are required", None)
     success, msg, user = register_user(user_data.username, user_data.password)
     if not success:
         return make_response(400, msg, None)
@@ -351,6 +352,8 @@ async def create_admin(admin_data: CreateAdminRequest, request: Request):
         return make_response(err_code, err_msg, None)
     if current_user["role"] != "admin":
         return make_response(403, "permission denied", None)
+    if not admin_data.username or not admin_data.password:
+        return make_response(400, "username and password are required", None)
     success, msg, user = register_user(admin_data.username, admin_data.password)
     if not success:
         return make_response(400, msg, None)
@@ -457,6 +460,7 @@ async def reset_system(request: Request):
     reset_problems()
     reset_submissions()
     reset_audit_logs()
+    reset_languages()
     request.session.clear()
     return make_response(200, "system reset successfully", None)
 
@@ -477,14 +481,29 @@ async def export_data(request: Request):
     except Exception as e:
         return make_response(500, f"export failed: {str(e)}", None)
 
+REQUIRED_USER_FIELDS = ["user_id", "username", "password", "role", "join_time", "submit_count", "resolve_count"]
+REQUIRED_PROBLEM_FIELDS = ["id", "title", "description", "input_description", "output_description", "samples", "constraints", "testcases"]
+REQUIRED_SUBMISSION_FIELDS = ["submission_id", "user_id", "problem_id", "language", "code", "status", "score", "counts"]
+
+def _validate_items(items, required_fields, label):
+    for item in items:
+        if not isinstance(item, dict):
+            return False, f"invalid {label} entry: expected object"
+        for field in required_fields:
+            if field not in item:
+                return False, f"missing required field in {label}: {field}"
+    return True, ""
+
 @app.post("/api/import/")
-async def import_data(request: Request, file: UploadFile = File(...)):
+async def import_data(request: Request, file: Optional[UploadFile] = File(None)):
     current_user, err_code, err_msg = get_current_user(request)
     if not current_user:
         return make_response(err_code, err_msg, None)
     if current_user["role"] != "admin":
         return make_response(403, "permission denied", None)
-    if not file.filename or not file.filename.endswith('.json'):
+    if file is None or not file.filename:
+        return make_response(400, "no file provided", None)
+    if not file.filename.endswith('.json'):
         return make_response(400, "only JSON files supported", None)
     try:
         content = await file.read()
@@ -492,10 +511,19 @@ async def import_data(request: Request, file: UploadFile = File(...)):
         if not isinstance(data, dict):
             return make_response(400, "invalid data format", None)
         if "users" in data and isinstance(data["users"], list):
+            valid, msg = _validate_items(data["users"], REQUIRED_USER_FIELDS, "users")
+            if not valid:
+                return make_response(400, msg, None)
             import_users(data["users"])
         if "problems" in data and isinstance(data["problems"], list):
+            valid, msg = _validate_items(data["problems"], REQUIRED_PROBLEM_FIELDS, "problems")
+            if not valid:
+                return make_response(400, msg, None)
             import_problems(data["problems"])
         if "submissions" in data and isinstance(data["submissions"], list):
+            valid, msg = _validate_items(data["submissions"], REQUIRED_SUBMISSION_FIELDS, "submissions")
+            if not valid:
+                return make_response(400, msg, None)
             import_submissions(data["submissions"])
         return make_response(200, "import success", None)
     except json.JSONDecodeError:

@@ -4,6 +4,7 @@ from typing import Dict, Optional, List
 _supported_languages: Dict[str, Dict] = {}
 
 def init_default_languages() -> None:
+    _supported_languages.clear()
     _supported_languages["python"] = {
         "name": "Python 3.10",
         "compile_cmd": None,
@@ -21,15 +22,21 @@ def init_default_languages() -> None:
         "default_memory_limit": 128
     }
 
-def get_all_languages() -> List[Dict]:
-    result = []
+def reset_languages() -> None:
+    init_default_languages()
+
+def get_all_languages() -> Dict[str, List]:
+    result: Dict[str, List] = {
+        "id": [],
+        "name": [],
+        "default_time_limit": [],
+        "default_memory_limit": []
+    }
     for lang_id, config in _supported_languages.items():
-        result.append({
-            "id": lang_id,
-            "name": config["name"],
-            "default_time_limit": config["default_time_limit"],
-            "default_memory_limit": config["default_memory_limit"]
-        })
+        result["id"].append(lang_id)
+        result["name"].append(config["name"])
+        result["default_time_limit"].append(config["default_time_limit"])
+        result["default_memory_limit"].append(config["default_memory_limit"])
     return result
 
 def get_language_config(lang_id: str) -> Optional[Dict]:
