@@ -1,9 +1,44 @@
 import uuid
 from datetime import date
 import bcrypt
+import os
+import json
 from typing import Dict, Optional, List, Tuple
-_users: Dict[str, Dict] = {}
-_username_map: Dict[str, str] = {}
+USER_DIR = "users"
+
+def init_user_dir() -> None:
+    if not os.path.exists(USER_DIR):
+        os.makedirs(USER_DIR)
+
+def get_user_file_path(user_id: str) -> str:
+    return os.path.join(USER_DIR, f"{user_id}.json")
+
+def save_user_to_file(user: Dict) -> None:
+    file_path = get_user_file_path(user["user_id"])
+    user_copy = user.copy()
+    user_copy["resolved_problems"] = list(user["resolved_problems"])
+    with open(file_path, "w", encoding="utf-8") as f:
+        json.dump(user_copy, f, ensure_ascii=False, indent=2)
+
+def load_user_from_file(user_id: str) -> Optional[Dict]:
+    file_path = get_user_file_path(user_id)
+    if not os.path.exists(file_path):
+        return None
+    with open(file_path, "r", encoding="utf-8") as f:
+        user = json.load(f)
+    user["resolved_problems"] = set(user.get("resolved_problems", []))
+    return user
+
+def load_all_users() -> Tuple[Dict[str, Dict], Dict[str, str]]:
+    users = {}
+    username_map = {}
+    for filename in os.listdir(USER_DIR):
+        if filename.endswith(".json"):
+            user_id = filename[:-5]
+            user = load_user_from_file(user_id)
+            users[user_id] = user
+            username_map[user["username"]] = user_id
+    return users, username_map
 
 def init_default_admin() -> None:
     admin_username = "admin"
@@ -26,6 +61,7 @@ def init_default_admin() -> None:
         "resolved_problems": set()
     }
     _username_map[admin_username] = user_id
+    save_user_to_file(_users[user_id])
 
 def register_user(username: str, password: str) -> Tuple[bool, str, Optional[Dict]]:
     if len(username) < 3 or len(username) > 40:
@@ -51,6 +87,7 @@ def register_user(username: str, password: str) -> Tuple[bool, str, Optional[Dic
     }
     _users[user_id] = user
     _username_map[username] = user_id
+    save_user_to_file(user)
     public_user = _get_public_user_info(user)
     return True, "register success", public_user
 
@@ -87,6 +124,7 @@ def update_user_role(user_id: str, new_role: str) -> Tuple[bool, str]:
     if not user:
         return False, "user not found"
     user["role"] = new_role
+    save_user_to_file(user)
     return True, "role updated"
 
 def get_user_list(page: Optional[int] = None, page_size: Optional[int] = None) -> Tuple[int, List[Dict]]:
@@ -105,6 +143,7 @@ def increment_submit_count(user_id: str) -> None:
     user = _users.get(user_id)
     if user:
         user["submit_count"] += 1
+        save_user_to_file(user)
 
 def increment_resolve_count(user_id: str, problem_id: str) -> None:
     user = _users.get(user_id)
@@ -113,6 +152,7 @@ def increment_resolve_count(user_id: str, problem_id: str) -> None:
     if problem_id not in user["resolved_problems"]:
         user["resolved_problems"].add(problem_id)
         user["resolve_count"] += 1
+        save_user_to_file(user)
 
 def _get_public_user_info(user: Dict) -> Dict:
     return {
@@ -126,6 +166,9 @@ def _get_public_user_info(user: Dict) -> Dict:
 
 def reset_users() -> None:
     global _users, _username_map
+    for filename in os.listdir(USER_DIR):
+        if filename.endswith(".json"):
+            os.remove(os.path.join(USER_DIR, filename))
     _users.clear()
     _username_map.clear()
     init_default_admin()
@@ -149,7 +192,7 @@ def import_users(users_data: List[Dict]) -> None:
     global _users, _username_map
     for user_data in users_data:
         user_id = user_data["user_id"]
-        _users[user_id] = {
+        user = {
             "user_id": user_id,
             "username": user_data["username"],
             "password_hash": user_data["password"],
@@ -159,6 +202,10 @@ def import_users(users_data: List[Dict]) -> None:
             "resolve_count": user_data["resolve_count"],
             "resolved_problems": set(user_data.get("resolved_problems", []))
         }
+        _users[user_id] = user
         _username_map[user_data["username"]] = user_id
+        save_user_to_file(user)
 
+init_user_dir()
+_users,_username_map=load_all_users()
 init_default_admin()

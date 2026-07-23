@@ -6,7 +6,7 @@ def init_default_languages() -> None:
     _supported_languages["python"] = {
         "name": "Python 3.10",
         "compile_cmd": None,
-        "run_cmd": "python3 {file}",
+        "run_cmd": "python {file}",
         "file_suffix": ".py",
         "default_time_limit": 3.0,
         "default_memory_limit": 128

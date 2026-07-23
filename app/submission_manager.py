@@ -1,16 +1,47 @@
 import uuid
 import asyncio
+import os
+import json
 from typing import Dict, Optional,List,Tuple
 from app.problem_manager import load_problem
 from app.judge import judge_single_testcase
 from app.language_manager import get_language_config
 from app.user_manager import increment_resolve_count
 
-_submissions: Dict[str, Dict] = {}
+SUBMISSION_DIR = "submissions"
+
+def init_submission_dir() -> None:
+    if not os.path.exists(SUBMISSION_DIR):
+        os.makedirs(SUBMISSION_DIR)
+
+def get_submission_file_path(submission_id: str) -> str:
+    return os.path.join(SUBMISSION_DIR, f"{submission_id}.json")
+
+def save_submission_to_file(submission: Dict) -> None:
+    file_path = get_submission_file_path(submission["id"])
+    with open(file_path, "w", encoding="utf-8") as f:
+        json.dump(submission, f, ensure_ascii=False, indent=2)
+
+def load_submission_from_file(submission_id: str) -> Optional[Dict]:
+    file_path = get_submission_file_path(submission_id)
+    if not os.path.exists(file_path):
+        return None
+    with open(file_path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def load_all_submissions() -> Dict[str, Dict]:
+    submissions = {}
+    for filename in os.listdir(SUBMISSION_DIR):
+        if filename.endswith(".json"):
+            sub_id = filename[:-5]
+            sub = load_submission_from_file(sub_id)
+            if sub:
+                submissions[sub_id] = sub
+    return submissions
 
 def create_submission(problem_id: str, language: str, code: str,user_id:str="anonymous") -> str:
     submission_id = uuid.uuid4().hex
-    _submissions[submission_id] = {
+    submission = {
         "id": submission_id,
         "problem_id": problem_id,
         "language": language,
@@ -19,8 +50,11 @@ def create_submission(problem_id: str, language: str, code: str,user_id:str="ano
         "status": "pending",
         "score": 0,
         "total_score": 0,
-        "testcases": []
+        "testcases": [],
+        "info":""
     }
+    _submissions[submission_id] = submission
+    save_submission_to_file(submission)
     asyncio.create_task(run_judge_task(submission_id))
     return submission_id
 
@@ -62,6 +96,7 @@ async def rejudge_submission(submission_id: str) -> Optional[bool]:
     submission["score"] = 0
     submission["total_score"] = 0
     submission["testcases"] = []
+    save_submission_to_file(submission)
     asyncio.create_task(run_judge_task(submission_id))
     return True
 
@@ -74,6 +109,7 @@ async def run_judge_task(submission_id: str) -> None:
         if not problem:
             submission["status"] = "error"
             submission["info"]="problem not found"
+            save_submission_to_file(submission)
             return
         lang_config = get_language_config(submission["language"])
         default_time = lang_config["default_time_limit"]
@@ -100,12 +136,17 @@ async def run_judge_task(submission_id: str) -> None:
         submission["status"] = "success"
         if submission["score"] == submission["total_score"]:
             increment_resolve_count(submission["user_id"], submission["problem_id"])
+        save_submission_to_file(submission)
     except Exception as e:
         submission["status"] = "error"
         submission["info"] = str(e)
+        save_submission_to_file(submission)
 
 def reset_submissions() -> None:
     global _submissions
+    for filename in os.listdir(SUBMISSION_DIR):
+        if filename.endswith(".json"):
+            os.remove(os.path.join(SUBMISSION_DIR, filename))
     _submissions.clear()
 
 def export_submissions() -> List[Dict]:
@@ -144,7 +185,7 @@ def import_submissions(submissions_data: List[Dict]) -> None:
                 "memory": detail["memory"],
                 "info": ""
             })
-        _submissions[sub_id] = {
+        submission = {
             "id": sub_id,
             "user_id": sub_data["user_id"],
             "problem_id": sub_data["problem_id"],
@@ -155,3 +196,8 @@ def import_submissions(submissions_data: List[Dict]) -> None:
             "total_score": sub_data["counts"],
             "testcases": testcases
         }
+        _submissions[sub_id] = submission
+        save_submission_to_file(submission)
+
+init_submission_dir()
+_submissions = load_all_submissions()
