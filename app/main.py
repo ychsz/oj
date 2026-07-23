@@ -1,18 +1,23 @@
+import json
 from fastapi import FastAPI
 from fastapi import Request
+from fastapi import UploadFile, File
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.middleware.sessions import SessionMiddleware
 from typing import List, Optional,Dict,Tuple
 from app.language_manager import get_all_languages, register_language, get_language_config
-from app.submission_manager import create_submission, get_submission,get_submission_list,rejudge_submission
-from app.audit_manager import add_audit_log, get_audit_log_list
+from app.submission_manager import create_submission, get_submission,get_submission_list,rejudge_submission,reset_submissions, export_submissions, import_submissions
+from app.audit_manager import add_audit_log, get_audit_log_list,reset_audit_logs
 from app.problem_manager import (
     get_problem_list,
     load_problem,
     add_problem,
     delete_problem,
-    update_problem_log_visibility
+    update_problem_log_visibility,
+    reset_problems,
+    export_problems,
+    import_problems
 )
 from app.user_manager import (
     verify_login,
@@ -21,7 +26,10 @@ from app.user_manager import (
     get_public_user_by_id,
     update_user_role,
     get_user_list,
-    increment_submit_count
+    increment_submit_count,
+    reset_users,
+    export_users,
+    import_users
 )
 
 app = FastAPI(title="oj")
@@ -437,3 +445,60 @@ async def list_audit_logs(
         "total": total,
         "logs": logs
     })
+
+@app.post("/api/reset/")
+async def reset_system(request: Request):
+    current_user, err_code, err_msg = get_current_user(request)
+    if not current_user:
+        return make_response(err_code, err_msg, None)
+    if current_user["role"] != "admin":
+        return make_response(403, "permission denied", None)
+    reset_users()
+    reset_problems()
+    reset_submissions()
+    reset_audit_logs()
+    request.session.clear()
+    return make_response(200, "system reset successfully", None)
+
+@app.get("/api/export/")
+async def export_data(request: Request):
+    current_user, err_code, err_msg = get_current_user(request)
+    if not current_user:
+        return make_response(err_code, err_msg, None)
+    if current_user["role"] != "admin":
+        return make_response(403, "permission denied", None)
+    try:
+        data = {
+            "users": export_users(),
+            "problems": export_problems(),
+            "submissions": export_submissions()
+        }
+        return make_response(200, "success", data)
+    except Exception as e:
+        return make_response(500, f"export failed: {str(e)}", None)
+
+@app.post("/api/import/")
+async def import_data(request: Request, file: UploadFile = File(...)):
+    current_user, err_code, err_msg = get_current_user(request)
+    if not current_user:
+        return make_response(err_code, err_msg, None)
+    if current_user["role"] != "admin":
+        return make_response(403, "permission denied", None)
+    if not file.filename or not file.filename.endswith('.json'):
+        return make_response(400, "only JSON files supported", None)
+    try:
+        content = await file.read()
+        data = json.loads(content.decode("utf-8"))
+        if not isinstance(data, dict):
+            return make_response(400, "invalid data format", None)
+        if "users" in data and isinstance(data["users"], list):
+            import_users(data["users"])
+        if "problems" in data and isinstance(data["problems"], list):
+            import_problems(data["problems"])
+        if "submissions" in data and isinstance(data["submissions"], list):
+            import_submissions(data["submissions"])
+        return make_response(200, "import success", None)
+    except json.JSONDecodeError:
+        return make_response(400, "invalid JSON format", None)
+    except Exception as e:
+        return make_response(500, f"import failed: {str(e)}", None)
