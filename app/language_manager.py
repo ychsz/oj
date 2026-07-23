@@ -1,3 +1,4 @@
+import sys
 from typing import Dict, Optional, List
 
 _supported_languages: Dict[str, Dict] = {}
@@ -14,7 +15,7 @@ def init_default_languages() -> None:
     _supported_languages["cpp"] = {
         "name": "GCC C++",
         "compile_cmd": "g++ -std=c++14 -O2 {src} -o {exe}",
-        "run_cmd": "./{exe}",
+        "run_cmd": "{exe}" if sys.platform=="win32" else "./{exe}",
         "file_suffix": ".cpp",
         "default_time_limit": 1.0,
         "default_memory_limit": 128
