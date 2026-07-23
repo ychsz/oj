@@ -40,3 +40,7 @@ def get_audit_log_list(
     end_index = start_index + page_size
     paginated_logs = filtered[start_index:end_index]
     return total_count, paginated_logs
+
+def reset_audit_logs() -> None:
+    global _audit_logs
+    _audit_logs.clear()

@@ -103,3 +103,55 @@ async def run_judge_task(submission_id: str) -> None:
     except Exception as e:
         submission["status"] = "error"
         submission["info"] = str(e)
+
+def reset_submissions() -> None:
+    global _submissions
+    _submissions.clear()
+
+def export_submissions() -> List[Dict]:
+    result = []
+    for sub in _submissions.values():
+        details = []
+        for idx, tc in enumerate(sub["testcases"], start=1):
+            details.append({
+                "id": idx,
+                "result": tc["status"],
+                "time": tc["time"],
+                "memory": tc["memory"]
+            })
+        result.append({
+            "submission_id": sub["id"],
+            "user_id": sub["user_id"],
+            "problem_id": sub["problem_id"],
+            "language": sub["language"],
+            "code": sub["code"],
+            "status": sub["status"],
+            "details": details,
+            "score": sub["score"],
+            "counts": sub["total_score"]
+        })
+    return result
+
+def import_submissions(submissions_data: List[Dict]) -> None:
+    global _submissions
+    for sub_data in submissions_data:
+        sub_id = sub_data["submission_id"]
+        testcases = []
+        for detail in sub_data.get("details", []):
+            testcases.append({
+                "status": detail["result"],
+                "time": detail["time"],
+                "memory": detail["memory"],
+                "info": ""
+            })
+        _submissions[sub_id] = {
+            "id": sub_id,
+            "user_id": sub_data["user_id"],
+            "problem_id": sub_data["problem_id"],
+            "language": sub_data["language"],
+            "code": sub_data["code"],
+            "status": sub_data["status"],
+            "score": sub_data["score"],
+            "total_score": sub_data["counts"],
+            "testcases": testcases
+        }

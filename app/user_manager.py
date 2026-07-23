@@ -124,4 +124,41 @@ def _get_public_user_info(user: Dict) -> Dict:
         "resolve_count": user["resolve_count"]
     }
 
+def reset_users() -> None:
+    global _users, _username_map
+    _users.clear()
+    _username_map.clear()
+    init_default_admin()
+
+def export_users() -> List[Dict]:
+    result = []
+    for user in _users.values():
+        result.append({
+            "user_id": user["user_id"],
+            "username": user["username"],
+            "password": user["password_hash"],
+            "role": user["role"],
+            "join_time": user["join_time"],
+            "submit_count": user["submit_count"],
+            "resolve_count": user["resolve_count"],
+            "resolved_problems": list(user["resolved_problems"])
+        })
+    return result
+
+def import_users(users_data: List[Dict]) -> None:
+    global _users, _username_map
+    for user_data in users_data:
+        user_id = user_data["user_id"]
+        _users[user_id] = {
+            "user_id": user_id,
+            "username": user_data["username"],
+            "password_hash": user_data["password"],
+            "role": user_data["role"],
+            "join_time": user_data["join_time"],
+            "submit_count": user_data["submit_count"],
+            "resolve_count": user_data["resolve_count"],
+            "resolved_problems": set(user_data.get("resolved_problems", []))
+        }
+        _username_map[user_data["username"]] = user_id
+
 init_default_admin()

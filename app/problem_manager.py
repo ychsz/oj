@@ -83,3 +83,25 @@ def update_problem_log_visibility(problem_id: str, public_cases: bool) -> Tuple[
     with open(file_path, "w", encoding="utf-8") as f:
         json.dump(problem, f, ensure_ascii=False, indent=2)
     return True, "log visibility updated"
+
+def reset_problems() -> None:
+    for filename in os.listdir(PROBLEM_DIR):
+        if filename.endswith(".json"):
+            os.remove(os.path.join(PROBLEM_DIR, filename))
+
+def export_problems() -> List[Dict]:
+    problems = []
+    for filename in os.listdir(PROBLEM_DIR):
+        if filename.endswith(".json"):
+            problem_id = filename[:-5]
+            problem = load_problem(problem_id)
+            if problem:
+                problems.append(problem)
+    return problems
+
+def import_problems(problems_data: List[Dict]) -> None:
+    for problem in problems_data:
+        problem_id = problem["id"]
+        file_path = get_problem_file_path(problem_id)
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(problem, f, ensure_ascii=False, indent=2)
