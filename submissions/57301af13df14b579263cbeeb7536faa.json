@@ -1,0 +1,19 @@
+{
+  "id": "57301af13df14b579263cbeeb7536faa",
+  "problem_id": "P1001",
+  "language": "python",
+  "code": "a,b=map(int,input().split())\nprint(a+b)",
+  "user_id": "2cc25f4da48b406aab3a0950a19d2113",
+  "status": "success",
+  "score": 10,
+  "total_score": 10,
+  "testcases": [
+    {
+      "status": "AC",
+      "time": 0.1412160000181757,
+      "memory": 2.1171875,
+      "info": ""
+    }
+  ],
+  "info": ""
+}

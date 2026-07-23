@@ -1,0 +1,30 @@
+{
+  "id": "P1001",
+  "title": "A+B Problem",
+  "description": "Given two integers a and b, output the sum of them. (|a|, |b| ≤ 10⁹)",
+  "input_description": "Input two integers a and b.",
+  "output_description": "Output the result of a + b.",
+  "samples": [
+    {
+      "input": "1 2",
+      "output": "3"
+    }
+  ],
+  "constraints": "|a|,|b| <= 10^9",
+  "testcases": [
+    {
+      "input": "1 2",
+      "output": "3"
+    }
+  ],
+  "hint": "Negative numbers are allowed!",
+  "source": "Luogu",
+  "tags": [
+    "Basic Problem"
+  ],
+  "time_limit": 1.0,
+  "memory_limit": 128,
+  "author": "Luogu",
+  "difficulty": "Introductory",
+  "public_cases": false
+}

@@ -1,0 +1,13 @@
+{
+  "user_id": "2cc25f4da48b406aab3a0950a19d2113",
+  "username": "admin",
+  "password_hash": "$2b$12$Y9H.SUlROCPZ2aroocrPEO8bpox3JIIvtVCCwPjnmiHe.T8MeXw3y",
+  "role": "admin",
+  "join_time": "2026-07-23",
+  "submit_count": 16,
+  "resolve_count": 2,
+  "resolved_problems": [
+    "string",
+    "P1001"
+  ]
+}
