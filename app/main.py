@@ -9,6 +9,7 @@ from typing import List, Optional,Dict,Tuple
 from app.language_manager import get_all_languages, register_language, get_language_config, reset_languages
 from app.submission_manager import create_submission, get_submission,get_submission_list,rejudge_submission,reset_submissions, export_submissions, import_submissions
 from app.audit_manager import add_audit_log, get_audit_log_list,reset_audit_logs
+from app.docker_sandbox import docker_available, sandbox_image_present, SANDBOX_IMAGE
 from app.problem_manager import (
     get_problem_list,
     load_problem,
@@ -165,7 +166,7 @@ async def add_language(lang: LanguageRegister, request: Request):
     current_user, err_code, err_msg = get_current_user(request)
     if not current_user:
         return make_response(err_code, err_msg, None)
-    success = register_language(
+    success, msg = register_language(
         lang_id=lang.name,
         name=lang.name,
         compile_cmd=lang.compile_cmd,
@@ -175,8 +176,21 @@ async def add_language(lang: LanguageRegister, request: Request):
         default_memory_limit=lang.memory_limit
     )
     if not success:
-        return make_response(409, "language already exists", None)
+        if msg == "language already exists":
+            return make_response(409, msg, None)
+        return make_response(400, msg, None)
     return make_response(200, "language registered", {"name": lang.name})
+
+@app.get("/api/sandbox/status")
+async def sandbox_status(request: Request):
+    current_user, err_code, err_msg = get_current_user(request)
+    if not current_user:
+        return make_response(err_code, err_msg, None)
+    return make_response(200, "success", {
+        "docker_available": docker_available(),
+        "image_present": sandbox_image_present(),
+        "image": SANDBOX_IMAGE
+    })
 
 @app.post("/api/submissions/")
 async def submit_code(submission: SubmissionCreate, request: Request):

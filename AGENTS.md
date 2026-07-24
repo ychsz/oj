@@ -10,12 +10,20 @@ Online Judge (THU "Programming Training" coursework).
 - Repo root is mandatory: data dirs are referenced by **relative path** in every
   manager (`USER_DIR = "users"`, `PROBLEM_DIR = "problems"`, `SUBMISSION_DIR = "submissions"`).
   Running elsewhere silently creates empty data dirs.
-- Install deps: `pip install -r requirements.txt` (fastapi, uvicorn, psutil, bcrypt).
+- Install deps: `pip install -r requirements.txt` (fastapi, uvicorn, bcrypt; streamlit/requests are for the frontend).
 - To judge C++ submissions, `g++` must be on PATH (compile cmd `g++ -std=c++14 -O2 ...`).
 - To judge Python submissions, a `python` executable must be on PATH — the run cmd is
   `python {file}`, **not** `python3`. On systems with only `python3` (e.g. fresh WSL/Debian),
   Python submissions fail to run; add a `python` symlink/alias before testing submissions.
 - Default admin is auto-seeded on startup: username `admin`, password `admintestpassword`.
+- **Docker sandbox (Adv3)**: ALL judging runs inside the `oj-sandbox` Docker image.
+  Build it once with `bash scripts/build_sandbox.sh` (runs `docker build -t oj-sandbox -f
+  Dockerfile .`). The `docker` CLI + a running daemon are required. If Docker or the image
+  is missing at judge time, the submission is marked `SE` (sandbox error) — there is **no**
+  host-side fallback. Check status via `GET /api/sandbox/status`. Resource limits
+  (`--memory`, `--memory-swap`, `--cpus`) and isolation (`--network=none`, `--read-only`,
+  `--cap-drop=ALL`, `--security-opt no-new-privileges`, `--pids-limit`, non-root uid 1000)
+  are all expressed as Docker flags — no direct seccomp/cgroups/resource modules are used.
 
 ## State & persistence
 
@@ -50,10 +58,15 @@ Online Judge (THU "Programming Training" coursework).
 - Managers are module-level singletons; their init code runs on import (e.g.
   `init_default_admin()` and `init_default_languages()`). Importing a manager has side
   effects — don't import them in tests/utils casually.
-- `judge.py` runs **untrusted user code** via `asyncio.create_subprocess_shell(...,
-  shell=True)` with psutil memory monitoring (kills on RSS > limit / timeout). There is
-  **no sandboxing** (no cgroups/containers/namespaces) — keep that in scope when changing
-  the judge.
+- `judge.py` runs **untrusted user code** inside the `oj-sandbox` Docker container
+  via `app/docker_sandbox.run_in_sandbox` (argv list, `shell=False`). There is **no**
+  host-side process execution of submissions anymore — Docker is the only sandbox.
+  No seccomp/cgroups/resource modules are used directly; all isolation & limits are
+  Docker flags. If Docker/image is missing, judge returns `SE` (sandbox error).
+- Command templates registered via `POST /api/languages/` are security-validated by
+  `app/security.validate_command` (whitelist of leading programs + blacklist of shell
+  meta-characters, dangerous binaries, path escapes) before being stored; the rendered
+  command is re-validated at judge time as defense-in-depth.
 - Submission judging is fire-and-forget: `create_submission` schedules
   `run_judge_task` via `asyncio.create_task`, so the result is polled later through
   `GET /api/submissions/{id}`. `rejudge` resets and reschedules the same way.
