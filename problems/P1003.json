@@ -1,0 +1,31 @@
+{
+  "id": "P1003",
+  "title": "Special Judge Demo",
+  "description": "Output any two positive integers whose sum equals 10. Multiple valid answers exist.",
+  "input_description": "No input.",
+  "output_description": "Two positive integers x, y, satisfy x + y = 10. Any valid pair is accepted.",
+  "samples": [
+    {
+      "input": "",
+      "output": "3 7"
+    }
+  ],
+  "constraints": "",
+  "testcases": [
+    {
+      "input": "",
+      "output": ""
+    }
+  ],
+  "hint": null,
+  "source": null,
+  "tags": [
+    "Special Judge"
+  ],
+  "time_limit": 3.0,
+  "memory_limit": 128,
+  "author": "Yuan Chenhao",
+  "difficulty": "Introductory",
+  "judge_mode": "spj",
+  "public_cases": false
+}

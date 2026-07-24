@@ -1,0 +1,31 @@
+{
+  "id": "P1002",
+  "title": "Strict Output Test",
+  "description": "Please exactly output the specified string. Any extra space or newline will lead to Wrong Answer.",
+  "input_description": "No input.",
+  "output_description": "Print exactly HelloWorld (no space, no extra line break).",
+  "samples": [
+    {
+      "input": "",
+      "output": "HelloWorld"
+    }
+  ],
+  "constraints": "",
+  "testcases": [
+    {
+      "input": "",
+      "output": "HelloWorld"
+    }
+  ],
+  "hint": "Watch out for trailing spaces and newlines!",
+  "source": null,
+  "tags": [
+    "Strict Compare"
+  ],
+  "time_limit": 3.0,
+  "memory_limit": 128,
+  "author": "Yuan Chenhao",
+  "difficulty": "Introductory",
+  "judge_mode": "strict",
+  "public_cases": false
+}

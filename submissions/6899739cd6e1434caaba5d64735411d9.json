@@ -1,0 +1,19 @@
+{
+  "id": "6899739cd6e1434caaba5d64735411d9",
+  "problem_id": "P1003",
+  "language": "python",
+  "code": "print(\"5 5\")",
+  "user_id": "2cc25f4da48b406aab3a0950a19d2113",
+  "status": "success",
+  "score": 10,
+  "total_score": 10,
+  "testcases": [
+    {
+      "status": "AC",
+      "time": 0.6109422950030421,
+      "memory": 0.0,
+      "info": ""
+    }
+  ],
+  "info": ""
+}

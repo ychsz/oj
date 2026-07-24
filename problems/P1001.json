@@ -26,5 +26,6 @@
   "memory_limit": 128,
   "author": "Luogu",
   "difficulty": "Introductory",
-  "public_cases": false
+  "public_cases": false,
+  "judge_mode": "standard"
 }

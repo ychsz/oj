@@ -1,0 +1,19 @@
+{
+  "id": "df06836f3c374cf1aae6c1a9d06f205c",
+  "problem_id": "P1002",
+  "language": "python",
+  "code": "print(\"HelloWorld \")",
+  "user_id": "2cc25f4da48b406aab3a0950a19d2113",
+  "status": "success",
+  "score": 0,
+  "total_score": 10,
+  "testcases": [
+    {
+      "status": "WA",
+      "time": 0.5944205670020892,
+      "memory": 0.0,
+      "info": "wrong answer (strict)"
+    }
+  ],
+  "info": ""
+}

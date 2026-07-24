@@ -93,6 +93,25 @@ def list_problems() -> list:
 def get_problem(problem_id: str) -> Dict[str, Any]:
     return _call("GET", "get_problem", path_params={"problem_id": problem_id})
 
+def create_problem(payload: Dict[str, Any]) -> Dict[str, Any]:
+    return _call("POST", "create_problem", json_body=payload)
+
+def delete_problem(problem_id: str) -> Dict[str, Any]:
+    return _call("DELETE", "delete_problem", path_params={"problem_id": problem_id})
+
+def get_spj_status(problem_id: str) -> Dict[str, Any]:
+    """GET /api/problems/{id}/spj -- {uploaded, filename?, size?} (any logged-in user)."""
+    return _call("GET", "spj", path_params={"problem_id": problem_id})
+
+def upload_spj_script(problem_id: str, file_bytes: bytes, filename: str) -> Dict[str, Any]:
+    """POST /api/problems/{id}/spj -- admin only. Uploads a .py special judge script."""
+    files = {"file": (filename, file_bytes, "text/x-python")}
+    return _call("POST", "spj", path_params={"problem_id": problem_id}, files=files)
+
+def delete_spj_script(problem_id: str) -> Dict[str, Any]:
+    """DELETE /api/problems/{id}/spj -- admin only."""
+    return _call("DELETE", "spj", path_params={"problem_id": problem_id})
+
 def list_languages() -> Dict[str, list]:
     raw = _call("GET", "list_languages") or {}
     ids = raw.get("id", [])

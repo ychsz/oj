@@ -3,7 +3,7 @@ import asyncio
 import os
 import json
 from typing import Dict, Optional,List,Tuple
-from app.problem_manager import load_problem
+from app.problem_manager import load_problem, get_spj_script_path, has_spj_script
 from app.judge import judge_single_testcase
 from app.language_manager import get_language_config
 from app.user_manager import increment_resolve_count
@@ -120,6 +120,16 @@ async def run_judge_task(submission_id: str) -> None:
         total_score = len(testcases) * 10
         submission["total_score"] = total_score
         passed_count = 0
+        judge_mode = problem.get("judge_mode", "standard")
+        spj_script_path = None
+        if judge_mode == "spj":
+            if has_spj_script(submission["problem_id"]):
+                spj_script_path = get_spj_script_path(submission["problem_id"])
+            else:
+                submission["status"] = "error"
+                submission["info"] = "judge_mode is spj but no SPJ script uploaded"
+                save_submission_to_file(submission)
+                return
         for tc in testcases:
             result = await judge_single_testcase(
                 code=submission["code"],
@@ -127,7 +137,9 @@ async def run_judge_task(submission_id: str) -> None:
                 input_data=tc["input"],
                 expected_output=tc["output"],
                 time_limit=time_limit,
-                memory_limit=memory_limit
+                memory_limit=memory_limit,
+                judge_mode=judge_mode,
+                spj_script_path=spj_script_path
             )
             submission["testcases"].append(result)
             if result["status"] == "AC":

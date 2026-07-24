@@ -10,15 +10,21 @@ from app.language_manager import get_all_languages, register_language, get_langu
 from app.submission_manager import create_submission, get_submission,get_submission_list,rejudge_submission,reset_submissions, export_submissions, import_submissions
 from app.audit_manager import add_audit_log, get_audit_log_list,reset_audit_logs
 from app.docker_sandbox import docker_available, sandbox_image_present, SANDBOX_IMAGE
+from app.security import validate_spj_script
 from app.problem_manager import (
     get_problem_list,
     load_problem,
     add_problem,
     delete_problem,
     update_problem_log_visibility,
+    update_problem_judge_mode,
     reset_problems,
     export_problems,
-    import_problems
+    import_problems,
+    save_spj_script,
+    delete_spj_script,
+    get_spj_script_info,
+    VALID_JUDGE_MODES
 )
 from app.user_manager import (
     verify_login,
@@ -56,6 +62,7 @@ class ProblemCreate(BaseModel):
     memory_limit: Optional[int] = None
     author: Optional[str] = None
     difficulty: Optional[str] = None
+    judge_mode: Optional[str] = None
 
 class SubmissionCreate(BaseModel):
     problem_id: str
@@ -87,6 +94,9 @@ class CreateAdminRequest(BaseModel):
 
 class LogVisibilityUpdate(BaseModel):
     public_cases: bool = False
+
+class JudgeModeUpdate(BaseModel):
+    judge_mode: str
 
 def make_response(code: int, msg: str, data=None) -> JSONResponse:
     content = {
@@ -446,6 +456,77 @@ async def update_log_visibility(
         "problem_id": problem_id,
         "public_cases": vis_data.public_cases
     })
+
+@app.put("/api/problems/{problem_id}/judge_mode")
+async def update_judge_mode(
+    problem_id: str,
+    mode_data: JudgeModeUpdate,
+    request: Request
+):
+    current_user, err_code, err_msg = get_current_user(request)
+    if not current_user:
+        return make_response(err_code, err_msg, None)
+    if current_user["role"] != "admin":
+        return make_response(403, "permission denied", None)
+    if mode_data.judge_mode not in VALID_JUDGE_MODES:
+        return make_response(400, f"invalid judge_mode: {mode_data.judge_mode!r} "
+                                  f"(allowed: {sorted(VALID_JUDGE_MODES)})", None)
+    success, msg = update_problem_judge_mode(problem_id, mode_data.judge_mode)
+    if not success:
+        return make_response(404, msg, None)
+    return make_response(200, msg, {
+        "problem_id": problem_id,
+        "judge_mode": mode_data.judge_mode
+    })
+
+@app.get("/api/problems/{problem_id}/spj")
+async def get_spj_status(problem_id: str, request: Request):
+    current_user, err_code, err_msg = get_current_user(request)
+    if not current_user:
+        return make_response(err_code, err_msg, None)
+    if load_problem(problem_id) is None:
+        return make_response(404, "problem not found", None)
+    info = get_spj_script_info(problem_id)
+    if info is None:
+        return make_response(200, "no spj script", {"uploaded": False})
+    info["uploaded"] = True
+    return make_response(200, "success", info)
+
+@app.post("/api/problems/{problem_id}/spj")
+async def upload_spj_script(problem_id: str, request: Request, file: UploadFile = File(...)):
+    current_user, err_code, err_msg = get_current_user(request)
+    if not current_user:
+        return make_response(err_code, err_msg, None)
+    if current_user["role"] != "admin":
+        return make_response(403, "permission denied", None)
+    if load_problem(problem_id) is None:
+        return make_response(404, "problem not found", None)
+    if not file.filename:
+        return make_response(400, "no file provided", None)
+    try:
+        content_bytes = await file.read()
+        content = content_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        return make_response(400, "script must be UTF-8 text", None)
+    ok, reason = validate_spj_script(file.filename, content)
+    if not ok:
+        return make_response(400, reason, None)
+    save_spj_script(problem_id, content)
+    info = get_spj_script_info(problem_id)
+    return make_response(200, "spj script uploaded", info)
+
+@app.delete("/api/problems/{problem_id}/spj")
+async def delete_spj_script_api(problem_id: str, request: Request):
+    current_user, err_code, err_msg = get_current_user(request)
+    if not current_user:
+        return make_response(err_code, err_msg, None)
+    if current_user["role"] != "admin":
+        return make_response(403, "permission denied", None)
+    if load_problem(problem_id) is None:
+        return make_response(404, "problem not found", None)
+    if not delete_spj_script(problem_id):
+        return make_response(404, "no spj script to delete", None)
+    return make_response(200, "spj script deleted", {"problem_id": problem_id})
 
 @app.get("/api/logs/access/")
 async def list_audit_logs(

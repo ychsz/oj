@@ -211,3 +211,51 @@ def validate_rendered_command(cmd: str) -> Tuple[bool, str]:
     if not ok:
         return False, reason
     return True, ""
+
+
+SPJ_MAX_SIZE = 64 * 1024
+SPJ_ALLOWED_SUFFIX = ".py"
+
+SPJ_FORBIDDEN_PATTERNS = (
+    "import os",
+    "import subprocess",
+    "import socket",
+    "import ctypes",
+    "__import__",
+    "globals(",
+    "locals(",
+    "exec(",
+    "eval(",
+    "compile(",
+    "import shutil",
+    "import signal",
+    "import threading",
+    "import multiprocessing",
+    "from os",
+    "from subprocess",
+    "from socket",
+    "from ctypes",
+    "from shutil",
+    "from signal",
+)
+
+def validate_spj_script(filename: str, content: str) -> Tuple[bool, str]:
+    if not filename or not isinstance(filename, str):
+        return False, "filename is required"
+    if not filename.endswith(SPJ_ALLOWED_SUFFIX):
+        return False, f"only {SPJ_ALLOWED_SUFFIX} scripts are allowed"
+    dangerous_names = ("..", "/", "\\")
+    for bad in dangerous_names:
+        if bad in filename:
+            return False, f"invalid filename: {filename!r}"
+    if not isinstance(content, str):
+        return False, "content must be a string"
+    if not content or not content.strip():
+        return False, "script is empty"
+    if len(content) > SPJ_MAX_SIZE:
+        return False, f"script too large (>{SPJ_MAX_SIZE} bytes)"
+    lowered = content.lower()
+    for pat in SPJ_FORBIDDEN_PATTERNS:
+        if pat in lowered:
+            return False, f"forbidden pattern in SPJ script: {pat!r}"
+    return True, ""

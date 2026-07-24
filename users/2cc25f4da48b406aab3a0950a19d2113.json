@@ -4,9 +4,10 @@
   "password_hash": "$2b$12$Y9H.SUlROCPZ2aroocrPEO8bpox3JIIvtVCCwPjnmiHe.T8MeXw3y",
   "role": "admin",
   "join_time": "2026-07-23",
-  "submit_count": 1,
-  "resolve_count": 1,
+  "submit_count": 4,
+  "resolve_count": 2,
   "resolved_problems": [
+    "P1003",
     "P1001"
   ]
 }

@@ -415,11 +415,6 @@ def tab_my_submissions() -> None:
     choice = st.selectbox("Select submission_id", options=options)
     sel_id = choice.split("  ", 1)[0] if "  " in choice else choice
     c1, c2 = st.columns([3, 1])
-    with c2:
-        if st.button("📂 View on result tab", type="primary"):
-            st.session_state.fresh_submission_id = sel_id
-            st.session_state.pop("_poll_done_" + str(sel_id), None)
-            st.rerun()
     with c1:
         if st.checkbox("Show details inline", key=f"show_detail_{sel_id}"):
             render_submission_detail(sel_id)
@@ -429,17 +424,242 @@ def tab_admin() -> None:
     if not is_admin():
         st.warning("This panel is restricted to administrators.")
         return
-    sub1, sub2, sub3, sub4 = st.tabs(
-        ["👥 Users", "🔁 Rejudge", "📜 Audit log", "💾 Export / Import / Reset"]
+    sub1, sub2, sub3, sub4, sub5 = st.tabs(
+        ["📚 Problems", "⚙ SPJ scripts", "👥 Users", "📜 Audit log", "💾 Export / Import / Reset"]
     )
     with sub1:
-        admin_users()
+        admin_problems()
     with sub2:
-        admin_rejudge()
+        admin_spj()
     with sub3:
-        admin_audit()
+        admin_users()
     with sub4:
+        admin_audit()
+    with sub5:
         admin_system()
+
+def admin_problems() -> None:
+    st.subheader("Problem management")
+
+    problems = safe_call(api_client.list_problems, prefix="Failed to load problems")
+    if problems is None:
+        return
+    rows = [{"ID": p.get("id", ""), "Title": p.get("title", "")} for p in problems]
+    st.dataframe(rows, use_container_width=True, hide_index=True)
+    st.caption(f"{len(problems)} problem(s) in total. Anyone can create problems "
+               "on the \"➕ Create problem\" tab.")
+
+    st.divider()
+    st.markdown("#### 🗑 Delete a problem")
+    if not problems:
+        st.info("No problems to delete.")
+    else:
+        del_map = {f"{p.get('id')}  {p.get('title')}": p.get("id") for p in problems}
+        del_choice = st.selectbox("Select problem to delete",
+                                  list(del_map.keys()), key="del_prob_choice")
+        del_id = del_map.get(del_choice, "")
+        confirm_del = st.checkbox("I confirm I want to delete this problem",
+                                  key="confirm_del_prob")
+        if st.button("🗑 Delete", type="primary", disabled=not confirm_del):
+            data = safe_call(api_client.delete_problem, del_id,
+                             prefix="Delete failed")
+            if data is not None:
+                st.success(f"Deleted problem `{del_id}`")
+                st.rerun()
+
+
+def tab_create_problem() -> None:
+    st.header("➕ Create problem")
+    u = current_user()
+    if u is None:
+        st.warning("Please log in first.")
+        return
+    st.caption(f"Creating as **{u.get('username')}** "
+               f"({u.get('role')}). Any logged-in user may create problems.")
+
+    pid = st.text_input("Problem ID *", key="cp_id",
+                        help="Unique identifier, e.g. 1000. Used as the filename.")
+    title = st.text_input("Title *", key="cp_title")
+    c_tl, c_ml, c_jm = st.columns(3)
+    with c_tl:
+        time_limit = st.number_input("Time limit (s)", min_value=0.1, value=3.0,
+                                     step=0.5, format="%.1f", key="cp_tl")
+    with c_ml:
+        memory_limit = st.number_input("Memory limit (MB)", min_value=1,
+                                       value=128, step=16, key="cp_ml")
+    with c_jm:
+        judge_mode = st.selectbox(
+            "Judge mode", ["standard", "strict", "spj"], key="cp_jm",
+            help="standard=exact match; strict=exact match ignoring trailing "
+                 "whitespace; spj=custom script checks each testcase output.",
+        )
+
+    spj_file = None
+    if judge_mode == "spj":
+        if is_admin():
+            st.info("SPJ mode selected. Upload the special-judge script (.py). "
+                    "It receives the test input and the contestant's output and "
+                    "decides AC/WA. You can also change it later under "
+                    "Admin → SPJ scripts.")
+            spj_file = st.file_uploader("SPJ script (.py, UTF-8)", type=["py"],
+                                        key="cp_spj_file")
+        else:
+            st.warning(
+                "SPJ special-judge scripts can only be uploaded by an "
+                "administrator. You may create the problem now, but judging will "
+                "fail until an admin uploads the SPJ script — please contact one."
+            )
+
+    difficulty = st.text_input("Difficulty", key="cp_diff")
+    tags_raw = st.text_input("Tags (comma-separated)", key="cp_tags",
+                             help="e.g. dp, greedy, math")
+    st.markdown("**Description** (required)")
+    description = st.text_area("Description", height=160, key="cp_desc",
+                               label_visibility="collapsed")
+    cin, cout = st.columns(2)
+    with cin:
+        st.markdown("**Input description** (required)")
+        input_description = st.text_area("Input description", height=100,
+                                         key="cp_in", label_visibility="collapsed")
+    with cout:
+        st.markdown("**Output description** (required)")
+        output_description = st.text_area("Output description", height=100,
+                                          key="cp_out", label_visibility="collapsed")
+    st.markdown("**Constraints** (required)")
+    constraints = st.text_area("Constraints", height=80, key="cp_constr",
+                               label_visibility="collapsed")
+
+    st.markdown("**Samples**")
+    n_samples = st.number_input("Number of samples", min_value=0, max_value=10,
+                                value=1, step=1, key="cp_ns")
+    sample_inp: List[str] = []
+    sample_out: List[str] = []
+    for i in range(int(n_samples)):
+        st.markdown(f"Sample {i + 1}")
+        s_c1, s_c2 = st.columns(2)
+        si = s_c1.text_area("Input", height=70, key=f"cp_si_{i}",
+                            label_visibility="collapsed", placeholder="input")
+        so = s_c2.text_area("Output", height=70, key=f"cp_so_{i}",
+                            label_visibility="collapsed", placeholder="output")
+        sample_inp.append(si or "")
+        sample_out.append(so or "")
+
+    st.markdown("**Testcases** (hidden, used for judging, required)")
+    n_tests = st.number_input("Number of testcases", min_value=0, max_value=30,
+                              value=1, step=1, key="cp_nt")
+    test_inp: List[str] = []
+    test_out: List[str] = []
+    for i in range(int(n_tests)):
+        st.markdown(f"Testcase {i + 1}")
+        t_c1, t_c2 = st.columns(2)
+        ti = t_c1.text_area("Input", height=70, key=f"cp_ti_{i}",
+                            label_visibility="collapsed", placeholder="input")
+        to = t_c2.text_area("Output", height=70, key=f"cp_to_{i}",
+                            label_visibility="collapsed", placeholder="output")
+        test_inp.append(ti or "")
+        test_out.append(to or "")
+
+    hint = st.text_input("Hint", key="cp_hint")
+    c_src, c_au = st.columns(2)
+    with c_src:
+        source = st.text_input("Source", key="cp_source")
+    with c_au:
+        author = st.text_input("Author", key="cp_author")
+
+    if st.button("✅ Create problem", type="primary", use_container_width=True):
+        if not pid.strip() or not title.strip():
+            st.error("Problem ID and Title are required.")
+            return
+        tags_list = [t.strip() for t in (tags_raw or "").split(",") if t.strip()]
+        payload: Dict[str, Any] = {
+            "id": pid.strip(),
+            "title": title.strip(),
+            "description": description,
+            "input_description": input_description,
+            "output_description": output_description,
+            "samples": [{"input": sample_inp[i], "output": sample_out[i]}
+                        for i in range(int(n_samples))],
+            "constraints": constraints,
+            "testcases": [{"input": test_inp[i], "output": test_out[i]}
+                          for i in range(int(n_tests))],
+            "time_limit": float(time_limit),
+            "memory_limit": int(memory_limit),
+            "judge_mode": judge_mode,
+        }
+        if hint.strip(): payload["hint"] = hint.strip()
+        if source.strip(): payload["source"] = source.strip()
+        if author.strip(): payload["author"] = author.strip()
+        if difficulty.strip(): payload["difficulty"] = difficulty.strip()
+        if tags_list: payload["tags"] = tags_list
+        data = safe_call(api_client.create_problem, payload,
+                         prefix="Create failed")
+        if data is None:
+            return
+        new_id = data.get("id", pid.strip())
+        if judge_mode == "spj" and is_admin() and spj_file is not None:
+            spj_data = safe_call(
+                api_client.upload_spj_script, new_id,
+                spj_file.getvalue(), spj_file.name, prefix="SPJ upload failed",
+            )
+            if spj_data is not None:
+                st.success(f"Problem `{new_id}` created with SPJ script "
+                           f"({spj_data.get('filename')}).")
+            else:
+                st.warning(f"Problem `{new_id}` created, but SPJ script upload "
+                           f"failed. Upload it later under Admin → SPJ scripts.")
+        elif judge_mode == "spj" and not is_admin():
+            st.success(f"Problem `{new_id}` created. Remember: judging needs an "
+                       f"admin-uploaded SPJ script — please contact an admin.")
+        else:
+            st.success(f"Problem `{new_id}` created successfully!")
+        st.rerun()
+
+
+def admin_spj() -> None:
+    st.subheader("SPJ script management")
+    st.caption("Special-judge scripts are admin-only. Upload / replace / delete "
+               "the `.py` script a problem uses when its judge mode is `spj`.")
+    problems = safe_call(api_client.list_problems, prefix="Failed to load problems")
+    if problems is None:
+        return
+    if not problems:
+        st.info("No problems available.")
+        return
+    pmap = {f"{p.get('id')}  {p.get('title')}": p.get("id") for p in problems}
+    choice = st.selectbox("Select problem", list(pmap.keys()), key="spj_prob_choice")
+    spj_id = pmap.get(choice, "")
+    if not spj_id:
+        return
+    status = safe_call(api_client.get_spj_status, spj_id,
+                       prefix="Failed to query SPJ status")
+    if status is None:
+        return
+    uploaded = bool(status.get("uploaded"))
+    if uploaded:
+        st.success(f"SPJ script uploaded: `{status.get('filename')}` "
+                   f"({status.get('size')} bytes).")
+    else:
+        st.info("No SPJ script uploaded for this problem yet.")
+
+    up = st.file_uploader(
+        "Upload / replace SPJ script (.py, UTF-8, <= 64 KB)",
+        type=["py"], key="spj_upload_file",
+    )
+    if up is not None and st.button("⬆ Upload / replace", type="primary"):
+        data = safe_call(api_client.upload_spj_script, spj_id,
+                         up.getvalue(), up.name, prefix="Upload failed")
+        if data is not None:
+            st.success(f"SPJ script uploaded: `{data.get('filename')}` "
+                       f"({data.get('size')} bytes).")
+            st.rerun()
+    if uploaded:
+        if st.button("🗑 Delete SPJ script", type="primary"):
+            data = safe_call(api_client.delete_spj_script, spj_id,
+                             prefix="Delete failed")
+            if data is not None:
+                st.success("SPJ script deleted.")
+                st.rerun()
+
 
 def admin_users() -> None:
     st.subheader("User list")
@@ -550,7 +770,8 @@ def admin_system() -> None:
             st.rerun()
 
 def main() -> None:
-    tabs = ["📚 Problems", "📝 Problem detail & submit", "⏳ Submission result", "📋 My submissions"]
+    tabs = ["📚 Problems", "📝 Problem detail & submit", "⏳ Submission result",
+            "📋 My submissions", "➕ Create problem"]
     if is_admin():
         tabs.append("🛡 Admin")
     selected = st.tabs(tabs)
@@ -562,8 +783,10 @@ def main() -> None:
         tab_result()
     with selected[3]:
         tab_my_submissions()
-    if len(selected) > 4:
-        with selected[4]:
+    with selected[4]:
+        tab_create_problem()
+    if len(selected) > 5:
+        with selected[5]:
             tab_admin()
 
 if __name__ == "__main__":
