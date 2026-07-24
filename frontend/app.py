@@ -59,6 +59,24 @@ def safe_call(fn, *args, prefix: str = "Operation failed", **kwargs):
         st.error(f"{prefix}: {e}")
         return None
 
+def _lang_id_to_name() -> Dict[str, str]:
+    langs = safe_call(api_client.list_languages, prefix="Failed to load languages") or []
+    return {l["id"]: l["name"] for l in langs}
+
+def _lang_for_stcode(lang_id: str) -> str:
+    lid = (lang_id or "").lower()
+    if lid in ("python", "py", "python3"):
+        return "python"
+    if lid in ("cpp", "c++", "cxx", "cc"):
+        return "cpp"
+    if lid == "c":
+        return "c"
+    if lid == "java":
+        return "java"
+    if lid in ("javascript", "js"):
+        return "javascript"
+    return lid
+
 def render_sidebar() -> None:
     with st.sidebar:
         st.markdown("## 🧑‍💻 Online Judge")
@@ -289,6 +307,20 @@ def render_submission_detail(sub_id: str) -> None:
     basic = safe_call(api_client.get_submission, sub_id, prefix="Failed to read result")
     if basic is None:
         return
+    problem_id = basic.get("problem_id", "")
+    problem_title = basic.get("problem_title", "")
+    lang_id = basic.get("language", "")
+    code = basic.get("code", "")
+    lang_map = _lang_id_to_name()
+    lang_display = lang_map.get(lang_id, lang_id)
+    st.subheader(f"{problem_id}  {problem_title}".strip())
+    st.caption(f"Language: {lang_display}  ·  submission_id: `{sub_id}`")
+    if code:
+        st.markdown("**Source code**")
+        st.code(code, language=_lang_for_stcode(lang_id))
+    else:
+        st.caption("Source code unavailable.")
+    st.divider()
     status = poll_submission(sub_id) or "pending"
     badge = submission_status_badge(status)
     c1, c2, c3 = st.columns(3)
@@ -347,22 +379,37 @@ def tab_my_submissions() -> None:
     if not rows:
         st.info("No submissions yet.")
         return
+    lang_map = _lang_id_to_name()
     table_rows = []
     for s in rows:
         sid = s.get("submission_id")
         status = s.get("status", "")
-        score = s.get("score", "-") if status == "success" else "-"
+        problem_id = s.get("problem_id", "")
+        problem_title = s.get("problem_title", "")
+        lang_id = s.get("language", "")
+        lang_display = lang_map.get(lang_id, lang_id)
+        if status == "success":
+            score_display = f"{s.get('score', 0)}/{s.get('counts', 0)}"
+        elif status == "error":
+            score_display = "Error"
+        else:
+            score_display = "Judging"
         table_rows.append({
             "submission_id": sid,
+            "Problem": f"{problem_id}  {problem_title}".strip(),
+            "Language": lang_display,
             "Status": submission_status_badge(status),
-            "Score": score,
+            "Score": score_display,
         })
     st.dataframe(table_rows, use_container_width=True, hide_index=True)
     st.caption(f"{res.get('total', len(rows))} record(s) in total.")
     st.divider()
     st.subheader("View a submission's details")
-    options = [f"{s.get('submission_id')}  [{submission_status_badge(s.get('status',''))}]"
-               for s in rows]
+    options = [
+        f"{s.get('submission_id')}  [{submission_status_badge(s.get('status',''))}]  "
+        f"{s.get('problem_id','')}  {s.get('problem_title','')}".rstrip()
+        for s in rows
+    ]
     if not options:
         return
     choice = st.selectbox("Select submission_id", options=options)

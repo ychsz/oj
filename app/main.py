@@ -223,9 +223,15 @@ async def get_submission_result(submission_id: str, request: Request):
         return make_response(404, "submission not found", None)
     if current_user["role"] != "admin" and sub["user_id"] != current_user["user_id"]:
         return make_response(403, "permission denied", None)
+    problem = load_problem(sub["problem_id"])
+    problem_title = problem.get("title", "") if problem else ""
     return make_response(200, "success", {
         "score": sub["score"],
-        "counts": sub["total_score"]
+        "counts": sub["total_score"],
+        "problem_id": sub["problem_id"],
+        "problem_title": problem_title,
+        "language": sub["language"],
+        "code": sub["code"]
     })
 
 @app.get("/api/submissions/")
@@ -253,13 +259,17 @@ async def list_submissions(
     )
     result_list = []
     for sub in subs:
+        problem = load_problem(sub["problem_id"])
+        problem_title = problem.get("title", "") if problem else ""
         item = {
             "submission_id": sub["id"],
-            "status": sub["status"]
+            "status": sub["status"],
+            "problem_id": sub["problem_id"],
+            "problem_title": problem_title,
+            "language": sub["language"],
+            "score": sub["score"],
+            "counts": sub["total_score"]
         }
-        if sub["status"] == "success":
-            item["score"] = sub["score"]
-            item["counts"] = sub["total_score"]
         result_list.append(item)
     return make_response(200, "success", {
         "total": total,
